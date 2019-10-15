@@ -49,8 +49,6 @@ class muon():
         self.captureFlag = False
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
         self.whiteWaiter = concurrent.futures.ThreadPoolExecutor(max_workers=2)
-        self.oldZoomScale = 1.0
-        self.currentZoomScale = 1.0
 
         self._init_mainview()
 
@@ -61,6 +59,8 @@ class muon():
             self.mainView.width = ui.get_screen_size()[0]/1.5
             self.prez = 'sheet'
 
+        print('init camera Settings')
+
         sampleBufferDelegate = create_objc_class(
             'sampleBufferDelegate',
             methods=[
@@ -69,9 +69,12 @@ class muon():
         delegate = sampleBufferDelegate.new()
 
         session = AVCaptureSession.alloc().init()
-        #self.device = AVCaptureDevice.defaultDeviceWithMediaType_('vide')
         cameraTypes = ['AVCaptureDeviceTypeBuiltInTripleCamera', 'AVCaptureDeviceTypeBuiltInDualCamera',
                        'AVCaptureDeviceTypeBuiltInDualWideCamera', 'AVCaptureDeviceTypeBuiltInWideAngleCamera']
+
+        self.cameraMaxZoom = [16, 16, 4, 4]
+        defeaultZoom = [1, 0.5, 1, 0.5]
+        self.typeNum = 0
 
         for camtype in cameraTypes:
             self.device = AVCaptureDevice.defaultDeviceWithDeviceType_mediaType_position_(
@@ -80,7 +83,10 @@ class muon():
                 self.device, None)
             if _input:
                 session.addInput_(_input)
+                print(camtype)
                 break
+            else:
+                self.typeNum += 1
 
         else:
             print('Failed to create input')
@@ -114,12 +120,17 @@ class muon():
         self._init_gestureView()
         self._mettya_subView()
 
+        print('Starting silent camera...')
         session.startRunning()
-        self.changeZoom(1.0)
+        self.changeZoom(defeaultZoom[self.typeNum])
+        self.oldZoomScale = defeaultZoom[self.typeNum]
+        self.currentZoomScale = defeaultZoom[self.typeNum]
 
         self.mainView.present(
-            prez, title_bar_color='black', hide_title_bar=True)
+            self.prez, title_bar_color='black', hide_title_bar=True)
         self.mainView.wait_modal()
+
+        print('Stop running...')
 
         session.stopRunning()
         delegate.release()
@@ -134,8 +145,8 @@ class muon():
         if self.currentZoomScale <= 0.5:
             self.currentZoomScale = 0.5
 
-        if self.currentZoomScale >= 16:
-            self.currentZoomScale = 16
+        if self.currentZoomScale >= self.cameraMaxZoom[self.typeNum]:
+            self.currentZoomScale = self.cameraMaxZoom[self.typeNum]
 
         self.changeZoom(self.currentZoomScale)
 
@@ -275,6 +286,7 @@ class muon():
         self.prez = 'fullscreen'
 
     def _init_whitenView(self):
+        print('init whitenView')
         self.whitenView = ui.View()
         self.whitenView.height = self.mainView.height
         self.whitenView.width = self.mainView.width
@@ -282,6 +294,7 @@ class muon():
         self.whitenView.alpha = 0.0
 
     def _init_shootbutton(self):
+        print('init shootButton')
         self.shootButton = ui.Button()
         self.shootButton.flex = 'T'
         self.shootButton.width = ui.get_screen_size()[0]*0.24
@@ -293,6 +306,7 @@ class muon():
             'iow:ios7_circle_filled_256')
 
     def _init_latestPhotoView(self):
+        print('init latestPhotoView')
         self.latestPhotoView = ui.ImageView()
         self.latestPhotoView.background_color = 'white'
         self.latestPhotoView.flex = 'T'
@@ -303,6 +317,7 @@ class muon():
         self.latestPhotoView.image = self.get_latest_photo()
 
     def _init_savingPhotoView(self):
+        print('init savingPhotoView')
         self.savingPhotoView = ui.ImageView()
         self.savingPhotoView.background_color = 'black'
         self.savingPhotoView.flex = 'T'
@@ -314,15 +329,17 @@ class muon():
         self.savingPhotoView.alpha = 0.0
 
     def _init_openPhotoapp(self):
+        print('init openPhotoApp')
         self.openPhotoapp = ui.Button()
         self.openPhotoapp.flex = 'T'
         self.openPhotoapp.height = 50
         self.openPhotoapp.width = self.openPhotoapp.height
         self.openPhotoapp.center = (self.mainView.width*0.12,
                                     self.mainView.height*0.874)
-        self.openPhotoapp.action = self._self.openPhotoapp
+        self.openPhotoapp.action = self._openPhotoapp
 
     def _init_closeButton(self):
+        print('init closeButton')
         self.closeButton = ui.Button()
         self.closeButton.flex = 'RB'
         self.closeButton.center = (self.mainView.width*0.09,
@@ -334,6 +351,7 @@ class muon():
         self.closeButton.action = self._closeButton
 
     def _init_gestureView(self):
+        print('init gestureView')
         self.gestureView = ui.View()
         self.gestureView.multitouch_enabled = True
         self.gestureView.width = self.mainView.width
@@ -341,7 +359,11 @@ class muon():
         self.gestureView.touch_ended = self.touch_ended
         Gestures.Gestures().add_pinch(self.gestureView, self.pinchChange)
 
+    def _init_changeZoomButton(self):
+        self.changeZoomButton = ui.Button()
+
     def _mettya_subView(self):
+        print('add subViews')
         self.mainView.add_subview(self.gestureView)
         self.mainView.add_subview(self.whitenView)
         self.mainView.add_subview(self.shootButton)
