@@ -2,6 +2,7 @@ from objc_util import *
 from ctypes import c_void_p
 from PIL import Image
 from PIL import ImageOps
+import Gestures
 import ui
 import io
 import os
@@ -11,6 +12,10 @@ import tempfile
 import coreimage
 import concurrent.futures
 import webbrowser
+import datetime
+import numbers
+
+import inspect
 
 AVCaptureSession = ObjCClass('AVCaptureSession')
 AVCaptureDevice = ObjCClass('AVCaptureDevice')
@@ -44,16 +49,22 @@ class muon():
         self.captureFlag = False
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
         self.whiteWaiter = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+        self.oldZoomScale = 1.0
+        self.currentZoomScale = 1.0
 
         self.mainView = ui.View()
         self.mainView.background_color = 'black'
         self.mainView.height = ui.get_screen_size()[0]*1.78
         self.mainView.width = ui.get_screen_size()[0]
         self.mainView.name = 'Silent Camera'
+        prez = 'fullscreen'
 
-        # if iPad == True: #overwrite
-        #self.height = ui.get_screen_size()[1]/1.3
-        #self.width = ui.get_screen_size()[0]/1.5
+        iPad = False
+
+        if iPad == True:  # overwrite
+            self.mainView.height = ui.get_screen_size()[1]/1.3
+            self.mainView.width = ui.get_screen_size()[0]/1.5
+            prez = 'sheet'
 
         sampleBufferDelegate = create_objc_class(
             'sampleBufferDelegate',
@@ -63,14 +74,23 @@ class muon():
         delegate = sampleBufferDelegate.new()
 
         session = AVCaptureSession.alloc().init()
-        device = AVCaptureDevice.defaultDeviceWithMediaType_('vide')
+        #self.device = AVCaptureDevice.defaultDeviceWithMediaType_('vide')
+        types = ['AVCaptureDeviceTypeBuiltInTripleCamera', 'AVCaptureDeviceTypeBuiltInDualCamera',
+                 'AVCaptureDeviceTypeBuiltInDualWideCamera', 'AVCaptureDeviceTypeBuiltInWideAngleCamera']
+        self.device = AVCaptureDevice.defaultDeviceWithDeviceType_mediaType_position_(
+            'AVCaptureDeviceTypeBuiltInTripleCamera', 'vide', 0)
         _input = AVCaptureDeviceInput.deviceInputWithDevice_error_(
-            device, None)
+            self.device, None)
         if _input:
             session.addInput_(_input)
         else:
             print('Failed to create input')
             return
+
+        self.device._setVideoHDREnabled_ = True
+        self.device.isVideoHDREnabled = True
+        self.device.isVideoStabilizationSupported = True
+        self.device.isLensStabilizationSupported = True
 
         output = AVCaptureVideoDataOutput.alloc().init()
         queue = ObjCInstance(dispatch_get_current_queue())
@@ -89,14 +109,14 @@ class muon():
         self.whitenView = ui.View()
         self.whitenView.height = self.mainView.height
         self.whitenView.width = self.mainView.width
-        self.whitenView.background_color = 'white'
+        self.whitenView.background_color = 'black'
         self.whitenView.alpha = 0.0
 
         button = ui.Button()
         button.flex = 'T'
         button.width = ui.get_screen_size()[0]*0.24
         button.height = button.width
-        button.center = (self.mainView.width*0.5, self.mainView.height*0.85)
+        button.center = (self.mainView.width*0.5, self.mainView.height*0.874)
         button.action = self.button_tapped
         button.background_image = ui.Image('iow:ios7_circle_filled_256')
         # button.alpha=0.8
@@ -107,7 +127,7 @@ class muon():
         self.latestPhotoView.height = 50
         self.latestPhotoView.width = self.latestPhotoView.height
         self.latestPhotoView.center = (
-            self.mainView.width*0.12, self.mainView.height*0.85)
+            self.mainView.width*0.12, self.mainView.height*0.874)
         self.latestPhotoView.image = self.get_latest_photo()
 
         self.savingPhotoView = ui.ImageView()
@@ -116,7 +136,7 @@ class muon():
         self.savingPhotoView.height = 50
         self.savingPhotoView.width = self.savingPhotoView.height
         self.savingPhotoView.center = (
-            self.mainView.width*0.12, self.mainView.height*0.85)
+            self.mainView.width*0.12, self.mainView.height*0.874)
         self.savingPhotoView.image = ui.Image('iow:load_d_32')
         self.savingPhotoView.alpha = 0.0
 
@@ -125,18 +145,40 @@ class muon():
         openPhotoapp.height = 50
         openPhotoapp.width = openPhotoapp.height
         openPhotoapp.center = (self.mainView.width*0.12,
-                               self.mainView.height*0.85)
+                               self.mainView.height*0.874)
         openPhotoapp.action = self._openPhotoapp
 
+        closeButoon = ui.Button()
+        closeButoon.flex = 'RB'
+        closeButoon.center = (self.mainView.width*0.09,
+                              self.mainView.height*0.09)
+        closeButoon.image = ui.Image('iow:close_32')
+        closeButoon.height = 24
+        closeButoon.width = 24
+        closeButoon.tint_color = 'white'
+        closeButoon.action = self._closeButton
+
+        self.gestureView = ui.View()
+        self.gestureView.multitouch_enabled = True
+        self.gestureView.width = self.mainView.width
+        self.gestureView.height = self.mainView.height
+        self.gestureView.touch_ended = self.touch_ended
+        Gestures.Gestures().add_pinch(self.gestureView, self.pinchChange)
+        # Gestures.Gestures().add_tap()
+
+        self.mainView.add_subview(self.gestureView)
         self.mainView.add_subview(self.whitenView)
         self.mainView.add_subview(button)
+        self.mainView.add_subview(closeButoon)
         self.mainView.add_subview(self.latestPhotoView)
         self.mainView.add_subview(self.savingPhotoView)
         self.mainView.add_subview(openPhotoapp)
 
         session.startRunning()
+        self.changeZoom(1.0)
 
-        self.mainView.present('fullscreen', title_bar_color='black')
+        self.mainView.present(
+            prez, title_bar_color='black', hide_title_bar=True)
         self.mainView.wait_modal()
 
         session.stopRunning()
@@ -144,10 +186,37 @@ class muon():
         session.release()
         output.release()
 
+    def pinchChange(self, recog):
+        pinchZoomScale = recog.scale
+        self.currentZoomScale = self.oldZoomScale - \
+            (1-pinchZoomScale)*self.oldZoomScale
+
+        if self.currentZoomScale <= 0.5:
+            self.currentZoomScale = 0.5
+
+        if self.currentZoomScale >= 16:
+            self.currentZoomScale = 16
+
+        self.changeZoom(self.currentZoomScale)
+
+        if recog.state == 3:
+            self.touch_ended()
+
+    def changeZoom(self, scale):
+        self.device.lockForConfiguration(None)
+        self.device.videoZoomFactor = scale*2
+        self.device.unlockForConfiguration()
+
+    def touch_ended(self):
+        self.oldZoomScale = self.currentZoomScale
+
     def _openPhotoapp(self, sender):
         self.mainView.close()
         webbrowser.open('photos-redirect://')
         exit()
+
+    def _closeButton(self, sender):
+        self.mainView.close()
 
     def _whiteWaiter(self):
         for i in range(10):
@@ -174,9 +243,16 @@ class muon():
         self.img = coreimage.CImage()
         self.img.ci_img = self.ciimage
 
+        self.shoot = time.time()
+
         #ui_img = self.img.get_uiImg()
         pilimg = self.img.get_PIL()
+        delta = time.time() - self.shoot
+        print('get pil time:{}'.format(delta))
         pilimg = pilimg.rotate(270, expand=True)
+
+        delta = time.time() - self.shoot
+        print('rotated time:{}'.format(delta))
         self.pilSaveAlbulm(pilimg)
         self.latestPhotoView.image = self.get_latest_photo()
         self.savingPhotoView.alpha = 0.0
@@ -184,9 +260,25 @@ class muon():
         # self.img.save_album()
 
     def pilSaveAlbulm(self, pilImg):
-        #temp_path = os.path.join(tempfile.gettempdir(), 'temp.png')
-        pilImg.save('temp.png')
-        photos.create_image_asset('temp.png')
+        delta = time.time() - self.shoot
+        print('called time:{}'.format(delta))
+
+        today = datetime.datetime.now().strftime("%Y%m%d-%H%M")
+        delta = time.time() - self.shoot
+        print('get filename time:{}'.format(delta))
+
+        temp_path = os.path.join(tempfile.gettempdir(), '{}.png'.format(today))
+        delta = time.time() - self.shoot
+        print('get path time:{}'.format(delta))
+        # print(temp_path)
+
+        pilImg.save(temp_path)
+        delta = time.time() - self.shoot
+        print('pil saved time:{}'.format(delta))
+
+        photos.create_image_asset(temp_path)
+        delta = time.time() - self.shoot
+        print('album saved time:{}'.format(delta))
 
     def pil2ui(self, imgIn):
         with io.BytesIO() as bIO:
