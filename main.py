@@ -74,7 +74,7 @@ class muon():
         cameraTypes = ['AVCaptureDeviceTypeBuiltInTripleCamera', 'AVCaptureDeviceTypeBuiltInDualCamera',
                        'AVCaptureDeviceTypeBuiltInDualWideCamera', 'AVCaptureDeviceTypeBuiltInWideAngleCamera']
 
-        self.cameraMaxZoom = [16, 16, 4, 4]
+        self.cameraMaxZoom = [16, 16, 2, 2]
         defeaultZoom = [1.0, 0.5, 1.0, 0.5]
         self.typeNum = 0
 
@@ -162,8 +162,12 @@ class muon():
         self.device.lockForConfiguration(None)
         self.device.videoZoomFactor = scale*2
         self.device.unlockForConfiguration()
-        self.zoomLevelLabel.text = str('x{}'.format(round(scale, 1)))
 
+        if self.typeNum == 1 or self.typeNum == 3:
+            self.zoomLevelLabel.text = str('x{}'.format(round(scale*2, 1)))
+            return scale
+
+        self.zoomLevelLabel.text = str('x{}'.format(round(scale, 1)))
         return scale
 
     def zoomAnimation(self, scale):
@@ -181,16 +185,16 @@ class muon():
     def zoomAnimationB(self, scale):
         d = self.oldZoomScale - scale
         t = 0
-        if d >= 1.5:
-            d2 = d-1.5
-            d = 1.5
-            for i in range(int(d2*100)):
-                t = 0.000001
-                # time.sleep(t)
-                self.changeZoom(self.oldZoomScale-i/100)
-            self.oldZoomScale = 2.0
-
-        i = 0
+        if self.typeNum == 0 or self.typeNum == 1:
+            if d >= 1.5:
+                d2 = d-1.5
+                d = 1.5
+                for i in range(int(d2*100)):
+                    t = 0.000001
+                    # time.sleep(t)
+                    self.changeZoom(self.oldZoomScale-i/100)
+                self.oldZoomScale = 2.0
+            i = 0
 
         for i in range(int(d*1000)):
             t = 0.000001 + math.exp(i/1000/1.5*4)/2.74/1000000*6
@@ -226,19 +230,17 @@ class muon():
 
     def chabgeZoomButton_tapped(self, sender):
         if self.oldZoomScale >= 2.0:
-            if self.typeNum == 0:
-                i = self.zoomAnimationB(0.5)
-            else:
-                i = self.zoomAnimationB(1.0)
+            # if self.typeNum == 0:
+            i = self.zoomAnimationB(0.5)
+            # else:
+            # i = self.zoomAnimationB(1.0)
         elif self.oldZoomScale >= 1.0:
             if self.typeNum == 0:
                 i = self.zoomAnimation(2.0)
             elif self.typeNum == 1:
                 i = self.zoomAnimation(2.0)
-            elif self.typeNum == 2:
-                i = self.zoomAnimationB(0.5)
             else:
-                i = self.zoomAnimationB(1.0)
+                i = self.zoomAnimationB(0.5)
         elif self.oldZoomScale >= 0.5:
             i = self.zoomAnimation(1.0)
             self.changeZoom(1.2)
