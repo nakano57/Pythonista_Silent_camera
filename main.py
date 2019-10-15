@@ -52,19 +52,14 @@ class muon():
         self.oldZoomScale = 1.0
         self.currentZoomScale = 1.0
 
-        self.mainView = ui.View()
-        self.mainView.background_color = 'black'
-        self.mainView.height = ui.get_screen_size()[0]*1.78
-        self.mainView.width = ui.get_screen_size()[0]
-        self.mainView.name = 'Silent Camera'
-        prez = 'fullscreen'
+        self._init_mainview()
 
         iPad = False
 
         if iPad == True:  # overwrite
             self.mainView.height = ui.get_screen_size()[1]/1.3
             self.mainView.width = ui.get_screen_size()[0]/1.5
-            prez = 'sheet'
+            self.prez = 'sheet'
 
         sampleBufferDelegate = create_objc_class(
             'sampleBufferDelegate',
@@ -75,14 +70,18 @@ class muon():
 
         session = AVCaptureSession.alloc().init()
         #self.device = AVCaptureDevice.defaultDeviceWithMediaType_('vide')
-        types = ['AVCaptureDeviceTypeBuiltInTripleCamera', 'AVCaptureDeviceTypeBuiltInDualCamera',
-                 'AVCaptureDeviceTypeBuiltInDualWideCamera', 'AVCaptureDeviceTypeBuiltInWideAngleCamera']
-        self.device = AVCaptureDevice.defaultDeviceWithDeviceType_mediaType_position_(
-            'AVCaptureDeviceTypeBuiltInTripleCamera', 'vide', 0)
-        _input = AVCaptureDeviceInput.deviceInputWithDevice_error_(
-            self.device, None)
-        if _input:
-            session.addInput_(_input)
+        cameraTypes = ['AVCaptureDeviceTypeBuiltInTripleCamera', 'AVCaptureDeviceTypeBuiltInDualCamera',
+                       'AVCaptureDeviceTypeBuiltInDualWideCamera', 'AVCaptureDeviceTypeBuiltInWideAngleCamera']
+
+        for camtype in cameraTypes:
+            self.device = AVCaptureDevice.defaultDeviceWithDeviceType_mediaType_position_(
+                camtype, 'vide', 0)
+            _input = AVCaptureDeviceInput.deviceInputWithDevice_error_(
+                self.device, None)
+            if _input:
+                session.addInput_(_input)
+                break
+
         else:
             print('Failed to create input')
             return
@@ -106,73 +105,14 @@ class muon():
 
         ObjCInstance(self.mainView).layer().addSublayer_(prev_layer)
 
-        self.whitenView = ui.View()
-        self.whitenView.height = self.mainView.height
-        self.whitenView.width = self.mainView.width
-        self.whitenView.background_color = 'black'
-        self.whitenView.alpha = 0.0
-
-        button = ui.Button()
-        button.flex = 'T'
-        button.width = ui.get_screen_size()[0]*0.24
-        button.height = button.width
-        button.center = (self.mainView.width*0.5, self.mainView.height*0.874)
-        button.action = self.button_tapped
-        button.background_image = ui.Image('iow:ios7_circle_filled_256')
-        # button.alpha=0.8
-
-        self.latestPhotoView = ui.ImageView()
-        self.latestPhotoView.background_color = 'white'
-        self.latestPhotoView.flex = 'T'
-        self.latestPhotoView.height = 50
-        self.latestPhotoView.width = self.latestPhotoView.height
-        self.latestPhotoView.center = (
-            self.mainView.width*0.12, self.mainView.height*0.874)
-        self.latestPhotoView.image = self.get_latest_photo()
-
-        self.savingPhotoView = ui.ImageView()
-        self.savingPhotoView.background_color = 'black'
-        self.savingPhotoView.flex = 'T'
-        self.savingPhotoView.height = 50
-        self.savingPhotoView.width = self.savingPhotoView.height
-        self.savingPhotoView.center = (
-            self.mainView.width*0.12, self.mainView.height*0.874)
-        self.savingPhotoView.image = ui.Image('iow:load_d_32')
-        self.savingPhotoView.alpha = 0.0
-
-        openPhotoapp = ui.Button()
-        openPhotoapp.flex = 'T'
-        openPhotoapp.height = 50
-        openPhotoapp.width = openPhotoapp.height
-        openPhotoapp.center = (self.mainView.width*0.12,
-                               self.mainView.height*0.874)
-        openPhotoapp.action = self._openPhotoapp
-
-        closeButoon = ui.Button()
-        closeButoon.flex = 'RB'
-        closeButoon.center = (self.mainView.width*0.09,
-                              self.mainView.height*0.09)
-        closeButoon.image = ui.Image('iow:close_32')
-        closeButoon.height = 24
-        closeButoon.width = 24
-        closeButoon.tint_color = 'white'
-        closeButoon.action = self._closeButton
-
-        self.gestureView = ui.View()
-        self.gestureView.multitouch_enabled = True
-        self.gestureView.width = self.mainView.width
-        self.gestureView.height = self.mainView.height
-        self.gestureView.touch_ended = self.touch_ended
-        Gestures.Gestures().add_pinch(self.gestureView, self.pinchChange)
-        # Gestures.Gestures().add_tap()
-
-        self.mainView.add_subview(self.gestureView)
-        self.mainView.add_subview(self.whitenView)
-        self.mainView.add_subview(button)
-        self.mainView.add_subview(closeButoon)
-        self.mainView.add_subview(self.latestPhotoView)
-        self.mainView.add_subview(self.savingPhotoView)
-        self.mainView.add_subview(openPhotoapp)
+        self._init_whitenView()
+        self._init_shootbutton()
+        self._init_latestPhotoView()
+        self._init_savingPhotoView()
+        self._init_openPhotoapp()
+        self._init_closeButton()
+        self._init_gestureView()
+        self._mettya_subView()
 
         session.startRunning()
         self.changeZoom(1.0)
@@ -325,6 +265,90 @@ class muon():
             # バッファのロックを解放
             CVPixelBufferUnlockBaseAddress(imagebuffer, 0)
             self.captureFlag = True
+
+    def _init_mainview(self):
+        self.mainView = ui.View()
+        self.mainView.background_color = 'black'
+        self.mainView.height = ui.get_screen_size()[0]*1.78
+        self.mainView.width = ui.get_screen_size()[0]
+        self.mainView.name = 'Silent Camera'
+        self.prez = 'fullscreen'
+
+    def _init_whitenView(self):
+        self.whitenView = ui.View()
+        self.whitenView.height = self.mainView.height
+        self.whitenView.width = self.mainView.width
+        self.whitenView.background_color = 'black'
+        self.whitenView.alpha = 0.0
+
+    def _init_shootbutton(self):
+        self.shootButton = ui.Button()
+        self.shootButton.flex = 'T'
+        self.shootButton.width = ui.get_screen_size()[0]*0.24
+        self.shootButton.height = self.shootButton.width
+        self.shootButton.center = (self.mainView.width*0.5,
+                                   self.mainView.height*0.874)
+        self.shootButton.action = self.button_tapped
+        self.shootButton.background_image = ui.Image(
+            'iow:ios7_circle_filled_256')
+
+    def _init_latestPhotoView(self):
+        self.latestPhotoView = ui.ImageView()
+        self.latestPhotoView.background_color = 'white'
+        self.latestPhotoView.flex = 'T'
+        self.latestPhotoView.height = 50
+        self.latestPhotoView.width = self.latestPhotoView.height
+        self.latestPhotoView.center = (
+            self.mainView.width*0.12, self.mainView.height*0.874)
+        self.latestPhotoView.image = self.get_latest_photo()
+
+    def _init_savingPhotoView(self):
+        self.savingPhotoView = ui.ImageView()
+        self.savingPhotoView.background_color = 'black'
+        self.savingPhotoView.flex = 'T'
+        self.savingPhotoView.height = 50
+        self.savingPhotoView.width = self.savingPhotoView.height
+        self.savingPhotoView.center = (
+            self.mainView.width*0.12, self.mainView.height*0.874)
+        self.savingPhotoView.image = ui.Image('iow:load_d_32')
+        self.savingPhotoView.alpha = 0.0
+
+    def _init_openPhotoapp(self):
+        self.openPhotoapp = ui.Button()
+        self.openPhotoapp.flex = 'T'
+        self.openPhotoapp.height = 50
+        self.openPhotoapp.width = self.openPhotoapp.height
+        self.openPhotoapp.center = (self.mainView.width*0.12,
+                                    self.mainView.height*0.874)
+        self.openPhotoapp.action = self._self.openPhotoapp
+
+    def _init_closeButton(self):
+        self.closeButton = ui.Button()
+        self.closeButton.flex = 'RB'
+        self.closeButton.center = (self.mainView.width*0.09,
+                                   self.mainView.height*0.09)
+        self.closeButton.image = ui.Image('iow:close_32')
+        self.closeButton.height = 24
+        self.closeButton.width = 24
+        self.closeButton.tint_color = 'white'
+        self.closeButton.action = self._closeButton
+
+    def _init_gestureView(self):
+        self.gestureView = ui.View()
+        self.gestureView.multitouch_enabled = True
+        self.gestureView.width = self.mainView.width
+        self.gestureView.height = self.mainView.height
+        self.gestureView.touch_ended = self.touch_ended
+        Gestures.Gestures().add_pinch(self.gestureView, self.pinchChange)
+
+    def _mettya_subView(self):
+        self.mainView.add_subview(self.gestureView)
+        self.mainView.add_subview(self.whitenView)
+        self.mainView.add_subview(self.shootButton)
+        self.mainView.add_subview(self.closeButton)
+        self.mainView.add_subview(self.openPhotoapp)
+        self.mainView.add_subview(self.latestPhotoView)
+        self.mainView.add_subview(self.savingPhotoView)
 
 
 cam = muon()
