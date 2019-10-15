@@ -14,7 +14,9 @@ import concurrent.futures
 import webbrowser
 import datetime
 import numbers
+import math
 
+# for test
 import inspect
 
 AVCaptureSession = ObjCClass('AVCaptureSession')
@@ -73,7 +75,7 @@ class muon():
                        'AVCaptureDeviceTypeBuiltInDualWideCamera', 'AVCaptureDeviceTypeBuiltInWideAngleCamera']
 
         self.cameraMaxZoom = [16, 16, 4, 4]
-        defeaultZoom = [1, 0.5, 1, 0.5]
+        defeaultZoom = [1.0, 0.5, 1.0, 0.5]
         self.typeNum = 0
 
         for camtype in cameraTypes:
@@ -118,6 +120,9 @@ class muon():
         self._init_openPhotoapp()
         self._init_closeButton()
         self._init_gestureView()
+        self._init_zoomView()
+        self._init_changeZoomButton()
+        self._init_zoomLevelLabel()
         self._mettya_subView()
 
         print('Starting silent camera...')
@@ -157,6 +162,42 @@ class muon():
         self.device.lockForConfiguration(None)
         self.device.videoZoomFactor = scale*2
         self.device.unlockForConfiguration()
+        self.zoomLevelLabel.text = str('x{}'.format(round(scale, 1)))
+
+        return scale
+
+    def zoomAnimation(self, scale):
+        t = 0
+        d = scale - self.oldZoomScale
+        for i in range(int(d*1000)):
+            t = 0.000001 + math.exp(i/4000)/2.74/10000
+
+            time.sleep(t)
+            # print(self.oldZoomScale+i/10)
+            self.changeZoom(self.oldZoomScale+i/1000)
+
+        return scale
+
+    def zoomAnimationB(self, scale):
+        d = self.oldZoomScale - scale
+        t = 0
+        if d >= 1.5:
+            d2 = d-1.5
+            d = 1.5
+            for i in range(int(d2*100)):
+                t = 0.000001
+                # time.sleep(t)
+                self.changeZoom(self.oldZoomScale-i/100)
+            self.oldZoomScale = 2.0
+
+        i = 0
+
+        for i in range(int(d*1000)):
+            t = 0.000001 + math.exp(i/1000/1.5*4)/2.74/1000000*6
+            time.sleep(t)
+            self.changeZoom(self.oldZoomScale-i/1000)
+
+        return scale
 
     def touch_ended(self):
         self.oldZoomScale = self.currentZoomScale
@@ -182,6 +223,28 @@ class muon():
         self.take_photo_flag = True
         # self.take_photo()
         self.executor.submit(self.take_photo)
+
+    def chabgeZoomButton_tapped(self, sender):
+        if self.oldZoomScale >= 2.0:
+            if self.typeNum == 0:
+                i = self.zoomAnimationB(0.5)
+            else:
+                i = self.zoomAnimationB(1.0)
+        elif self.oldZoomScale >= 1.0:
+            if self.typeNum == 0:
+                i = self.zoomAnimation(2.0)
+            elif self.typeNum == 1:
+                i = self.zoomAnimation(2.0)
+            elif self.typeNum == 2:
+                i = self.zoomAnimationB(0.5)
+            else:
+                i = self.zoomAnimationB(1.0)
+        elif self.oldZoomScale >= 0.5:
+            i = self.zoomAnimation(1.0)
+            self.changeZoom(1.2)
+            self.changeZoom(1.0)
+
+        self.oldZoomScale = i
 
     def take_photo(self):
         while True:
@@ -359,12 +422,43 @@ class muon():
         self.gestureView.touch_ended = self.touch_ended
         Gestures.Gestures().add_pinch(self.gestureView, self.pinchChange)
 
+    def _init_zoomView(self):
+        self.zoomView = ui.View()
+        self.zoomView.flex = 'T'
+        self.zoomView.center = (self.mainView.width*0.88,
+                                self.mainView.height*0.882)
+        self.zoomView.height = 72
+        self.zoomView.width = 72
+
     def _init_changeZoomButton(self):
         self.changeZoomButton = ui.Button()
+        self.changeZoomButton.flex = 'WH'
+        self.changeZoomButton.center = (self.zoomView.width*0,
+                                        self.zoomView.height * 0.1)
+        self.changeZoomButton.height = self.zoomView.height * 0.8
+        self.changeZoomButton.width = self.zoomView.width
+        self.changeZoomButton.action = self.chabgeZoomButton_tapped
+        self.changeZoomButton.image = ui.Image('iow:ios7_camera_32')
+        self.changeZoomButton.tint_color = 'white'
+
+        self.zoomView.add_subview(self.changeZoomButton)
+
+    def _init_zoomLevelLabel(self):
+        self.zoomLevelLabel = ui.Label()
+        self.zoomLevelLabel.flex = 'LT'
+        self.zoomLevelLabel.width = self.zoomView.width
+        self.zoomLevelLabel.center = (self.zoomView.width*0.82,
+                                      self.zoomView.height * 0.9)
+        self.zoomLevelLabel.text = 'x1.0'
+        self.zoomLevelLabel.text_color = 'white'
+        self.zoomView.add_subview(self.zoomLevelLabel)
+        self.zoomLevelLabel.font = ('DIN Alternate', 16)
 
     def _mettya_subView(self):
         print('add subViews')
+
         self.mainView.add_subview(self.gestureView)
+        self.mainView.add_subview(self.zoomView)
         self.mainView.add_subview(self.whitenView)
         self.mainView.add_subview(self.shootButton)
         self.mainView.add_subview(self.closeButton)
