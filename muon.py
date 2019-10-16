@@ -45,7 +45,6 @@ c.UIImageJPEGRepresentation.restype = c_void_p
 
 CIImage = ObjCClass('CIImage')
 UIImage = ObjCClass('UIImage')
-UIKit = ObjCClass('UIView')
 
 dispatch_get_current_queue = c.dispatch_get_current_queue
 dispatch_get_current_queue.restype = c_void_p
