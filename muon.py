@@ -6,19 +6,20 @@ import ui
 import io
 import os
 import time
+import math
 import photos
 import tempfile
 import concurrent.futures
 import webbrowser
+import platform
 import datetime
 import numbers
-import math
-import platform
 
 try:
     from Pythonista_Silent_camera.Gestures import Gestures
 except:
     from Gestures import Gestures
+
 # for test
 import inspect
 
