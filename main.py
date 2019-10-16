@@ -2,7 +2,7 @@ from objc_util import *
 from ctypes import c_void_p
 from PIL import Image
 from PIL import ImageOps
-from Pythonista_Silent_camera.Gestures import Gestures
+import Gestures
 import ui
 import io
 import os
@@ -18,7 +18,6 @@ import platform
 
 # for test
 import inspect
-
 
 AVCaptureSession = ObjCClass('AVCaptureSession')
 AVCaptureDevice = ObjCClass('AVCaptureDevice')
@@ -51,7 +50,7 @@ dispatch_get_current_queue = c.dispatch_get_current_queue
 dispatch_get_current_queue.restype = c_void_p
 
 
-class camera():
+class muon():
     def __init__(self, format='JPEG', save_to_album=True, return_Image=False, auto_close=False):
         self.ciimage = None
         self._take_photo_flag = False
@@ -61,7 +60,7 @@ class camera():
         self._saveAlbum = save_to_album
         self._fileformat = format
         self._autoclose = auto_close
-        cannotSaveAlbumFormarts = ['PIL', 'CIImage', 'UIImage']
+        cannotSaveAlbumFormarts = ['PIL','CIImage','UIImage']
         if format in cannotSaveAlbumFormarts:
             self._saveAlbum = False
 
@@ -234,8 +233,8 @@ class camera():
     def _button_tapped(self, sender):
         self.whitenView.alpha = 1.0
         self._take_photo_flag = True
-       # self._take_photo()
-        self.executor.submit(self._take_photo)
+        self._take_photo()
+        #self.executor.submit(self._take_photo)
 
     def _changeZoom_Button_tapped(self, sender):
         if self.oldZoomScale >= 2.0:
@@ -276,7 +275,7 @@ class camera():
         elif self._fileformat == 'CIImage':
             self.data = uiImg.CIImage()
         elif self._fileformat == 'UIImage':
-            self.data = uiImg
+        	self.data = uiImg
         else:
             quality = 0.8
             self.data = ObjCInstance(
@@ -290,20 +289,19 @@ class camera():
 
         if self._fileformat == 'PIL':
             self.data = self._temp2pil(self._saveData2temp())
-
+        
         self.latestPhotoView.image = self._get_latest_photo()
         self.savingPhotoView.alpha = 0.0
 
         if self._autoclose:
             time.sleep(1)
             self.close()
-
-    def _saveData2temp(self, fmt):
+    def _saveData2temp(self,fmt):
         today = datetime.datetime.now().strftime("%Y%m%d-%H%M")
         temp_path = os.path.join(
             tempfile.gettempdir(), '{0}.{1}'.format(today, fmt))
         self.data.writeToFile_atomically_(temp_path, True)
-
+        
         return temp_path
 
     def _pil2ui(self, imgIn):
@@ -474,13 +472,13 @@ class camera():
 
 
 if __name__ == '__main__':
-    camera(format='JPEG', save_to_album=True,
-           return_Image=True, auto_close=False).launch()
-
+    muon(format='JPEG', save_to_album=True,
+         return_Image=True, auto_close=False).launch()
+    
 
 # usage example, if you import it
 
-    #cam = muon.camera(format = 'JPEG',save_to_album=False,return_Image=True,auto_close = True)
+    #cam = muon(format = 'JPEG',save_to_album=False,return_Image=True,auto_close = True)
     # cam.launch()
     #data = cam.getData()
     # print(data)
