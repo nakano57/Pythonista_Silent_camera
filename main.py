@@ -9,12 +9,12 @@ import os
 import time
 import photos
 import tempfile
-import coreimage
 import concurrent.futures
 import webbrowser
 import datetime
 import numbers
 import math
+import platform
 
 # for test
 import inspect
@@ -37,29 +37,33 @@ CVPixelBufferUnlockBaseAddress = c.CVPixelBufferUnlockBaseAddress
 CVPixelBufferUnlockBaseAddress.argtypes = [c_void_p, c_int]
 CVPixelBufferUnlockBaseAddress.restype = None
 
+c.UIImagePNGRepresentation.argtypes = [c_void_p]
+c.UIImagePNGRepresentation.restype = c_void_p
+c.UIImageJPEGRepresentation.argtypes = [c_void_p, CGFloat]
+c.UIImageJPEGRepresentation.restype = c_void_p
+
 CIImage = ObjCClass('CIImage')
 UIImage = ObjCClass('UIImage')
+UIKit = ObjCClass('UIView')
 
 dispatch_get_current_queue = c.dispatch_get_current_queue
 dispatch_get_current_queue.restype = c_void_p
 
 
 class muon():
-    def __init__(self):
+    def __init__(self, format='JPEG', save_to_album=True, return_Image=False, auto_close=False):
         self.ciimage = None
         self.take_photo_flag = False
         self.captureFlag = False
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
-        self.whiteWaiter = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+        self.whiteWaiter = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        self._saveAlbum = save_to_album
+        self._fileformat = format
+        self._autoclose = auto_close
+        if format == 'PIL':
+            self._saveAlbum = False
 
         self._init_mainview()
-
-        iPad = False
-
-        if iPad == True:  # overwrite
-            self.mainView.height = ui.get_screen_size()[1]/1.3
-            self.mainView.width = ui.get_screen_size()[0]/1.5
-            self.prez = 'sheet'
 
         print('init camera Settings')
 
@@ -68,14 +72,14 @@ class muon():
             methods=[
                 self.captureOutput_didOutputSampleBuffer_fromConnection_],
             protocols=['AVCaptureVideoDataOutputSampleBufferDelegate'])
-        delegate = sampleBufferDelegate.new()
+        self._delegate = sampleBufferDelegate.new()
 
-        session = AVCaptureSession.alloc().init()
+        self._session = AVCaptureSession.alloc().init()
         cameraTypes = ['AVCaptureDeviceTypeBuiltInTripleCamera', 'AVCaptureDeviceTypeBuiltInDualCamera',
                        'AVCaptureDeviceTypeBuiltInDualWideCamera', 'AVCaptureDeviceTypeBuiltInWideAngleCamera']
 
         self.cameraMaxZoom = [16, 16, 2, 2]
-        defeaultZoom = [1.0, 0.5, 1.0, 0.5]
+        self._defeaultZoom = [1.0, 0.5, 1.0, 0.5]
         self.typeNum = 0
 
         for camtype in cameraTypes:
@@ -84,7 +88,7 @@ class muon():
             _input = AVCaptureDeviceInput.deviceInputWithDevice_error_(
                 self.device, None)
             if _input:
-                session.addInput_(_input)
+                self._session.addInput_(_input)
                 print(camtype)
                 break
             else:
@@ -99,15 +103,16 @@ class muon():
         self.device.isVideoStabilizationSupported = True
         self.device.isLensStabilizationSupported = True
 
-        output = AVCaptureVideoDataOutput.alloc().init()
+        self._output = AVCaptureVideoDataOutput.alloc().init()
         queue = ObjCInstance(dispatch_get_current_queue())
-        output.setSampleBufferDelegate_queue_(delegate, queue)
-        output.alwaysDiscardsLateVideoFrames = True
+        self._output.setSampleBufferDelegate_queue_(self._delegate, queue)
+        self._output.alwaysDiscardsLateVideoFrames = True
 
-        session.addOutput_(output)
-        session.sessionPreset = 'AVCaptureSessionPreset3840x2160'
+        self._session.addOutput_(self._output)
+        self._session.sessionPreset = 'AVCaptureSessionPreset3840x2160'
 
-        prev_layer = AVCaptureVideoPreviewLayer.layerWithSession_(session)
+        prev_layer = AVCaptureVideoPreviewLayer.layerWithSession_(
+            self._session)
         prev_layer.frame = ObjCInstance(self.mainView).bounds()
         prev_layer.setVideoGravity_('AVLayerVideoGravityResizeAspectFill')
 
@@ -125,22 +130,27 @@ class muon():
         self._init_zoomLevelLabel()
         self._mettya_subView()
 
+    def launch(self):
         print('Starting silent camera...')
-        session.startRunning()
-        self.changeZoom(defeaultZoom[self.typeNum])
-        self.oldZoomScale = defeaultZoom[self.typeNum]
-        self.currentZoomScale = defeaultZoom[self.typeNum]
+        self._session.startRunning()
+        self.changeZoom(self._defeaultZoom[self.typeNum])
+        self.oldZoomScale = self._defeaultZoom[self.typeNum]
+        self.currentZoomScale = self._defeaultZoom[self.typeNum]
 
         self.mainView.present(
-            self.prez, title_bar_color='black', hide_title_bar=True)
+            'sheet', title_bar_color='black', hide_title_bar=True, orientations='portrait')
         self.mainView.wait_modal()
 
+    def close(self):
         print('Stop running...')
+        self.mainView.close()
+        self._session.stopRunning()
+        self._delegate.release()
+        self._session.release()
+        self._output.release()
 
-        session.stopRunning()
-        delegate.release()
-        session.release()
-        output.release()
+    def getData(self):
+        return self.data
 
     def pinchChange(self, recog):
         pinchZoomScale = recog.scale
@@ -156,7 +166,7 @@ class muon():
         self.changeZoom(self.currentZoomScale)
 
         if recog.state == 3:
-            self.touch_ended()
+            self.oldZoomScale = self.currentZoomScale
 
     def changeZoom(self, scale):
         self.device.lockForConfiguration(None)
@@ -203,16 +213,13 @@ class muon():
 
         return scale
 
-    def touch_ended(self):
-        self.oldZoomScale = self.currentZoomScale
-
     def _openPhotoapp(self, sender):
         self.mainView.close()
         webbrowser.open('photos-redirect://')
         exit()
 
     def _closeButton(self, sender):
-        self.mainView.close()
+        self.close()
 
     def _whiteWaiter(self):
         for i in range(10):
@@ -230,14 +237,9 @@ class muon():
 
     def chabgeZoomButton_tapped(self, sender):
         if self.oldZoomScale >= 2.0:
-            # if self.typeNum == 0:
             i = self.zoomAnimationB(0.5)
-            # else:
-            # i = self.zoomAnimationB(1.0)
         elif self.oldZoomScale >= 1.0:
-            if self.typeNum == 0:
-                i = self.zoomAnimation(2.0)
-            elif self.typeNum == 1:
+            if self.typeNum == 0 or self.typeNum == 1:
                 i = self.zoomAnimation(2.0)
             else:
                 i = self.zoomAnimationB(0.5)
@@ -254,47 +256,52 @@ class muon():
                 self.captureFlag = False
                 break
 
+        self.shoot = time.time()
         self.whiteWaiter.submit(self._whiteWaiter)
         self.savingPhotoView.alpha = 0.5
-        self.img = coreimage.CImage()
-        self.img.ci_img = self.ciimage
-
-        self.shoot = time.time()
-
-        #ui_img = self.img.get_uiImg()
-        pilimg = self.img.get_PIL()
         delta = time.time() - self.shoot
-        print('get pil time:{}'.format(delta))
-        pilimg = pilimg.rotate(270, expand=True)
+        print('shooted time:{}'.format(delta))
+
+        uiImg = UIImage.imageWithCIImage_scale_orientation_(
+            self.ciimage, 1.0, 3)
+        delta = time.time() - self.shoot
+        print('get uiimage time:{}'.format(delta))
+
+        if self._fileformat == 'PNG':
+            self.data = ObjCInstance(c.UIImagePNGRepresentation(uiImg.ptr))
+        else:
+            quality = 1.0
+            self.data = ObjCInstance(
+                c.UIImageJPEGRepresentation(uiImg.ptr, quality))
 
         delta = time.time() - self.shoot
-        print('rotated time:{}'.format(delta))
-        self.pilSaveAlbulm(pilimg)
-        self.latestPhotoView.image = self.get_latest_photo()
-        self.savingPhotoView.alpha = 0.0
-        #self.stopView.image = None
-        # self.img.save_album()
-
-    def pilSaveAlbulm(self, pilImg):
-        delta = time.time() - self.shoot
-        print('called time:{}'.format(delta))
+        print('get data time:{}'.format(delta))
 
         today = datetime.datetime.now().strftime("%Y%m%d-%H%M")
-        delta = time.time() - self.shoot
-        print('get filename time:{}'.format(delta))
-
         temp_path = os.path.join(tempfile.gettempdir(), '{}.png'.format(today))
         delta = time.time() - self.shoot
         print('get path time:{}'.format(delta))
-        # print(temp_path)
 
-        pilImg.save(temp_path)
+        self.data.writeToFile_atomically_(temp_path, True)
         delta = time.time() - self.shoot
-        print('pil saved time:{}'.format(delta))
+        print('save temp time:{}'.format(delta))
 
-        photos.create_image_asset(temp_path)
-        delta = time.time() - self.shoot
-        print('album saved time:{}'.format(delta))
+        if self._saveAlbum:
+            photos.create_image_asset(temp_path)
+            delta = time.time() - self.shoot
+            print('create image asset time:{}'.format(delta))
+
+        if self._fileformat == 'PIL':
+            self.data = self.temp2pil(temp_path)
+            delta = time.time() - self.shoot
+            print('convert to pil time:{}'.format(delta))
+
+        self.latestPhotoView.image = self.get_latest_photo()
+        self.savingPhotoView.alpha = 0.0
+
+        if self._autoclose:
+            time.sleep(1)
+            self.close()
 
     def pil2ui(self, imgIn):
         with io.BytesIO() as bIO:
@@ -303,18 +310,9 @@ class muon():
         del bIO
         return imgOut
 
-    def ci2ui(self, ci_img):
-        ctx = ObjCClass('CIContext').context()
-        extent = ci_img.extent()
-        m = ctx.outputImageMaximumSize()
-        if extent.size.width > m.width or extent.size.height > m.height:
-            extent = CGRect(CGPoint(0, 0), CGSize(1024, 1024))
-        cg_img = ctx.createCGImage_fromRect_(ci_img, extent)
-        ui_img = UIImage.imageWithCGImage_(cg_img)
-        c.CGImageRelease.argtypes = [c_void_p]
-        c.CGImageRelease.restype = None
-        c.CGImageRelease(cg_img)
-        return ui_img
+    def temp2pil(self, temppath):
+        pilImg = Image.open(temppath)
+        return pilImg
 
     def get_latest_photo(self):
         all_assets = photos.get_assets()
@@ -348,7 +346,10 @@ class muon():
         self.mainView.height = ui.get_screen_size()[0]*1.78
         self.mainView.width = ui.get_screen_size()[0]
         self.mainView.name = 'Silent Camera'
-        self.prez = 'fullscreen'
+
+        if 'iPad' in platform.machine():  # overwrite
+            self.mainView.height = ui.get_screen_size()[1]/1.3
+            self.mainView.width = ui.get_screen_size()[0]/1.5
 
     def _init_whitenView(self):
         print('init whitenView')
@@ -421,10 +422,10 @@ class muon():
         self.gestureView.multitouch_enabled = True
         self.gestureView.width = self.mainView.width
         self.gestureView.height = self.mainView.height
-        self.gestureView.touch_ended = self.touch_ended
         Gestures.Gestures().add_pinch(self.gestureView, self.pinchChange)
 
     def _init_zoomView(self):
+        print('init zoomView')
         self.zoomView = ui.View()
         self.zoomView.flex = 'T'
         self.zoomView.center = (self.mainView.width*0.88,
@@ -469,4 +470,13 @@ class muon():
         self.mainView.add_subview(self.savingPhotoView)
 
 
-cam = muon()
+if __name__ == '__main__':
+    muon(format='JPEG', save_to_album=True,
+         return_Image=True, auto_close=False).launch()
+
+# usage example, if you import it
+
+    #cam = muon(format = 'JPEG',save_to_album=False,return_Image=True,auto_close = True)
+    # cam.launch()
+    #data = cam.getData()
+    # print(data)
