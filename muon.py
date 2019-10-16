@@ -53,14 +53,15 @@ dispatch_get_current_queue.restype = c_void_p
 class muon():
     def __init__(self, format='JPEG', save_to_album=True, return_Image=False, auto_close=False):
         self.ciimage = None
-        self.take_photo_flag = False
+        self._take_photo_flag = False
         self.captureFlag = False
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
         self.whiteWaiter = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         self._saveAlbum = save_to_album
         self._fileformat = format
         self._autoclose = auto_close
-        if format == 'PIL':
+        cannotSaveAlbumFormarts = ['PIL', 'CIImage', 'UIImage']
+        if format in cannotSaveAlbumFormarts:
             self._saveAlbum = False
 
         self._init_mainview()
@@ -133,7 +134,7 @@ class muon():
     def launch(self):
         print('Starting silent camera...')
         self._session.startRunning()
-        self.changeZoom(self._defeaultZoom[self.typeNum])
+        self._changeZoom(self._defeaultZoom[self.typeNum])
         self.oldZoomScale = self._defeaultZoom[self.typeNum]
         self.currentZoomScale = self._defeaultZoom[self.typeNum]
 
@@ -152,7 +153,7 @@ class muon():
     def getData(self):
         return self.data
 
-    def pinchChange(self, recog):
+    def _pinchChange(self, recog):
         pinchZoomScale = recog.scale
         self.currentZoomScale = self.oldZoomScale - \
             (1-pinchZoomScale)*self.oldZoomScale
@@ -163,12 +164,12 @@ class muon():
         if self.currentZoomScale >= self.cameraMaxZoom[self.typeNum]:
             self.currentZoomScale = self.cameraMaxZoom[self.typeNum]
 
-        self.changeZoom(self.currentZoomScale)
+        self._changeZoom(self.currentZoomScale)
 
         if recog.state == 3:
             self.oldZoomScale = self.currentZoomScale
 
-    def changeZoom(self, scale):
+    def _changeZoom(self, scale):
         self.device.lockForConfiguration(None)
         self.device.videoZoomFactor = scale*2
         self.device.unlockForConfiguration()
@@ -180,7 +181,7 @@ class muon():
         self.zoomLevelLabel.text = str('x{}'.format(round(scale, 1)))
         return scale
 
-    def zoomAnimation(self, scale):
+    def _zoomAnimation(self, scale):
         t = 0
         d = scale - self.oldZoomScale
         for i in range(int(d*1000)):
@@ -188,11 +189,11 @@ class muon():
 
             time.sleep(t)
             # print(self.oldZoomScale+i/10)
-            self.changeZoom(self.oldZoomScale+i/1000)
+            self._changeZoom(self.oldZoomScale+i/1000)
 
         return scale
 
-    def zoomAnimationB(self, scale):
+    def _zoomAnimation_Back(self, scale):
         d = self.oldZoomScale - scale
         t = 0
         if self.typeNum == 0 or self.typeNum == 1:
@@ -202,14 +203,14 @@ class muon():
                 for i in range(int(d2*100)):
                     t = 0.000001
                     # time.sleep(t)
-                    self.changeZoom(self.oldZoomScale-i/100)
+                    self._changeZoom(self.oldZoomScale-i/100)
                 self.oldZoomScale = 2.0
             i = 0
 
         for i in range(int(d*1000)):
             t = 0.000001 + math.exp(i/1000/1.5*4)/2.74/1000000*6
             time.sleep(t)
-            self.changeZoom(self.oldZoomScale-i/1000)
+            self._changeZoom(self.oldZoomScale-i/1000)
 
         return scale
 
@@ -229,92 +230,93 @@ class muon():
             else:
                 self.whitenView.alpha = (9-i)/10
 
-    def button_tapped(self, sender):
+    def _button_tapped(self, sender):
         self.whitenView.alpha = 1.0
-        self.take_photo_flag = True
-        # self.take_photo()
-        self.executor.submit(self.take_photo)
+        self._take_photo_flag = True
+        self._take_photo()
+        # self.executor.submit(self._take_photo)
 
-    def chabgeZoomButton_tapped(self, sender):
+    def _changeZoom_Button_tapped(self, sender):
         if self.oldZoomScale >= 2.0:
-            i = self.zoomAnimationB(0.5)
+            i = self._zoomAnimation_Back(0.5)
         elif self.oldZoomScale >= 1.0:
             if self.typeNum == 0 or self.typeNum == 1:
-                i = self.zoomAnimation(2.0)
+                i = self._zoomAnimation(2.0)
             else:
-                i = self.zoomAnimationB(0.5)
+                i = self._zoomAnimation_Back(0.5)
         elif self.oldZoomScale >= 0.5:
-            i = self.zoomAnimation(1.0)
-            self.changeZoom(1.2)
-            self.changeZoom(1.0)
+            i = self._zoomAnimation(1.0)
+            self._changeZoom(1.2)
+            self._changeZoom(1.0)
 
         self.oldZoomScale = i
 
-    def take_photo(self):
+    def _take_photo(self):
         while True:
             if self.captureFlag == True:
                 self.captureFlag = False
                 break
 
-        self.shoot = time.time()
+        #self.shoot = time.time()
+
         self.whiteWaiter.submit(self._whiteWaiter)
         self.savingPhotoView.alpha = 0.5
-        delta = time.time() - self.shoot
-        print('shooted time:{}'.format(delta))
+        #delta = time.time() - self.shoot
+        #print('shooted time:{}'.format(delta))
 
         uiImg = UIImage.imageWithCIImage_scale_orientation_(
             self.ciimage, 1.0, 3)
-        delta = time.time() - self.shoot
-        print('get uiimage time:{}'.format(delta))
+        #delta = time.time() - self.shoot
+        #print('get uiimage time:{}'.format(delta))
 
         if self._fileformat == 'PNG':
             self.data = ObjCInstance(c.UIImagePNGRepresentation(uiImg.ptr))
+            fmt = 'png'
+        elif self._fileformat == 'CIImage':
+            self.data = uiImg.CIImage()
+        elif self._fileformat == 'UIImage':
+            self.data = uiImg
         else:
-            quality = 1.0
+            quality = 0.8
             self.data = ObjCInstance(
                 c.UIImageJPEGRepresentation(uiImg.ptr, quality))
-
-        delta = time.time() - self.shoot
-        print('get data time:{}'.format(delta))
-
-        today = datetime.datetime.now().strftime("%Y%m%d-%H%M")
-        temp_path = os.path.join(tempfile.gettempdir(), '{}.png'.format(today))
-        delta = time.time() - self.shoot
-        print('get path time:{}'.format(delta))
-
-        self.data.writeToFile_atomically_(temp_path, True)
-        delta = time.time() - self.shoot
-        print('save temp time:{}'.format(delta))
+            fmt = 'jpg'
 
         if self._saveAlbum:
-            photos.create_image_asset(temp_path)
-            delta = time.time() - self.shoot
-            print('create image asset time:{}'.format(delta))
+            photos.create_image_asset(self._saveData2temp(fmt))
+            #delta = time.time() - self.shoot
+            #print('create image asset time:{}'.format(delta))
 
         if self._fileformat == 'PIL':
-            self.data = self.temp2pil(temp_path)
-            delta = time.time() - self.shoot
-            print('convert to pil time:{}'.format(delta))
+            self.data = self._temp2pil(self._saveData2temp())
 
-        self.latestPhotoView.image = self.get_latest_photo()
+        self.latestPhotoView.image = self._get_latest_photo()
         self.savingPhotoView.alpha = 0.0
 
         if self._autoclose:
             time.sleep(1)
             self.close()
 
-    def pil2ui(self, imgIn):
+    def _saveData2temp(self, fmt):
+        today = datetime.datetime.now().strftime("%Y%m%d-%H%M")
+        temp_path = os.path.join(
+            tempfile.gettempdir(), '{0}.{1}'.format(today, fmt))
+        self.data.writeToFile_atomically_(temp_path, True)
+
+        return temp_path
+
+    def _pil2ui(self, imgIn):
         with io.BytesIO() as bIO:
             imgIn.save(bIO, 'PNG')
             imgOut = ui.Image.from_data(bIO.getvalue())
         del bIO
         return imgOut
 
-    def temp2pil(self, temppath):
+    def _temp2pil(self, temppath):
         pilImg = Image.open(temppath)
         return pilImg
 
-    def get_latest_photo(self):
+    def _get_latest_photo(self):
         all_assets = photos.get_assets()
         last_asset = all_assets[-1]
         img = last_asset.get_image()
@@ -324,12 +326,12 @@ class muon():
         else:
             img = img.resize((round(img.width/img.height*100), 100))
 
-        return self.pil2ui(img)
+        return self._pil2ui(img)
 
     def captureOutput_didOutputSampleBuffer_fromConnection_(self, _self, _cmd, _output, _sample_buffer, *args):
 
-        if self.take_photo_flag == True:
-            self.take_photo_flag = False
+        if self._take_photo_flag == True:
+            self._take_photo_flag = False
             imagebuffer = CMSampleBufferGetImageBuffer(_sample_buffer)
 
             # バッファをロック
@@ -367,7 +369,7 @@ class muon():
         self.shootButton.height = self.shootButton.width
         self.shootButton.center = (self.mainView.width*0.5,
                                    self.mainView.height*0.874)
-        self.shootButton.action = self.button_tapped
+        self.shootButton.action = self._button_tapped
         self.shootButton.background_image = ui.Image(
             'iow:ios7_circle_filled_256')
 
@@ -380,7 +382,7 @@ class muon():
         self.latestPhotoView.width = self.latestPhotoView.height
         self.latestPhotoView.center = (
             self.mainView.width*0.12, self.mainView.height*0.874)
-        self.latestPhotoView.image = self.get_latest_photo()
+        self.latestPhotoView.image = self._get_latest_photo()
 
     def _init_savingPhotoView(self):
         print('init savingPhotoView')
@@ -422,7 +424,7 @@ class muon():
         self.gestureView.multitouch_enabled = True
         self.gestureView.width = self.mainView.width
         self.gestureView.height = self.mainView.height
-        Gestures.Gestures().add_pinch(self.gestureView, self.pinchChange)
+        Gestures.Gestures().add_pinch(self.gestureView, self._pinchChange)
 
     def _init_zoomView(self):
         print('init zoomView')
@@ -440,7 +442,7 @@ class muon():
                                         self.zoomView.height * 0.1)
         self.changeZoomButton.height = self.zoomView.height * 0.8
         self.changeZoomButton.width = self.zoomView.width
-        self.changeZoomButton.action = self.chabgeZoomButton_tapped
+        self.changeZoomButton.action = self._changeZoom_Button_tapped
         self.changeZoomButton.image = ui.Image('iow:ios7_camera_32')
         self.changeZoomButton.tint_color = 'white'
 
@@ -473,6 +475,7 @@ class muon():
 if __name__ == '__main__':
     muon(format='JPEG', save_to_album=True,
          return_Image=True, auto_close=False).launch()
+
 
 # usage example, if you import it
 
