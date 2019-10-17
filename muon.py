@@ -13,7 +13,7 @@ import concurrent.futures
 import webbrowser
 import platform
 import datetime
-import numbers
+import motion
 
 try:
     from Pythonista_Silent_camera.Gestures import Gestures
@@ -57,8 +57,10 @@ dispatch_get_current_queue.restype = c_void_p
 class camera():
     def __init__(self, format='JPEG', save_to_album=True, return_Image=False, auto_close=False):
         self.ciimage = None
+        self._counter = 0
         self._take_photo_flag = False
-        self.captureFlag = False
+        self._captureFlag = False
+        self._isiPad = False
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
         self.whiteWaiter = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         self._saveAlbum = save_to_album
@@ -141,13 +143,15 @@ class camera():
         self._changeZoom(self._defeaultZoom[self.typeNum])
         self.oldZoomScale = self._defeaultZoom[self.typeNum]
         self.currentZoomScale = self._defeaultZoom[self.typeNum]
+        motion.start_updates()
 
         self.mainView.present(
-            'sheet', title_bar_color='black', hide_title_bar=True, orientations='portrait')
+            style='sheet', title_bar_color='black', hide_title_bar=True, orientations=['portrait'])
         self.mainView.wait_modal()
 
     def close(self):
         print('Stop running...')
+        motion.stop_updates()
         self.mainView.close()
         self._session.stopRunning()
         self._delegate.release()
@@ -186,35 +190,14 @@ class camera():
         return scale
 
     def _zoomAnimation(self, scale):
-        t = 0
         d = scale - self.oldZoomScale
-        for i in range(int(d*1000)):
-            t = 0.000001 + math.exp(i/4000)/2.74/10000
+        s = 0
 
-            time.sleep(t)
-            # print(self.oldZoomScale+i/10)
-            self._changeZoom(self.oldZoomScale+i/1000)
-
-        return scale
-
-    def _zoomAnimation_Back(self, scale):
-        d = self.oldZoomScale - scale
-        t = 0
-        if self.typeNum == 0 or self.typeNum == 1:
-            if d >= 1.5:
-                d2 = d-1.5
-                d = 1.5
-                for i in range(int(d2*100)):
-                    t = 0.000001
-                    # time.sleep(t)
-                    self._changeZoom(self.oldZoomScale-i/100)
-                self.oldZoomScale = 2.0
-            i = 0
-
-        for i in range(int(d*1000)):
-            t = 0.000001 + math.exp(i/1000/1.5*4)/2.74/1000000*6
-            time.sleep(t)
-            self._changeZoom(self.oldZoomScale-i/1000)
+        for i in range(99):
+            i += 1
+            s = math.log(i)/math.log(100)*d+self.oldZoomScale
+            self._changeZoom(s)
+            time.sleep(0.001)
 
         return scale
 
@@ -227,27 +210,24 @@ class camera():
         self.close()
 
     def _whiteWaiter(self):
-        for i in range(10):
-            time.sleep(0.008)
-            if i == 0:
-                self.whitenView.alpha = 9.0
-            else:
-                self.whitenView.alpha = (9-i)/10
+        def animation():
+            self.whitenView.alpha = 0.0
+        ui.animate(animation, duration=0.2)
 
     def _button_tapped(self, sender):
         self.whitenView.alpha = 1.0
         self._take_photo_flag = True
-       # self._take_photo()
+        # self._take_photo()
         self.executor.submit(self._take_photo)
 
     def _changeZoom_Button_tapped(self, sender):
         if self.oldZoomScale >= 2.0:
-            i = self._zoomAnimation_Back(0.5)
+            i = self._zoomAnimation(0.5)
         elif self.oldZoomScale >= 1.0:
             if self.typeNum == 0 or self.typeNum == 1:
                 i = self._zoomAnimation(2.0)
             else:
-                i = self._zoomAnimation_Back(0.5)
+                i = self._zoomAnimation(0.5)
         elif self.oldZoomScale >= 0.5:
             i = self._zoomAnimation(1.0)
             self._changeZoom(1.2)
@@ -257,21 +237,32 @@ class camera():
 
     def _take_photo(self):
         while True:
-            if self.captureFlag == True:
-                self.captureFlag = False
+            if self._captureFlag == True:
+                self._captureFlag = False
                 break
 
-        #self.shoot = time.time()
+        # self.shoot = time.time()
 
         self.whiteWaiter.submit(self._whiteWaiter)
         self.savingPhotoView.alpha = 0.5
-        #delta = time.time() - self.shoot
-        #print('shooted time:{}'.format(delta))
+
+        # motion.start_updates()
+        motionData = motion.get_gravity()
+        # motion.stop_updates()
+
+        if motionData[0] >= 0.5:
+            rot = 1
+        elif motionData[0] <= -0.5:
+            rot = 0
+        else:
+            rot = 3
+        # delta = time.time() - self.shoot
+        # print('shooted time:{}'.format(delta))
 
         uiImg = UIImage.imageWithCIImage_scale_orientation_(
-            self.ciimage, 1.0, 3)
-        #delta = time.time() - self.shoot
-        #print('get uiimage time:{}'.format(delta))
+            self.ciimage, 1.0, rot)
+        # delta = time.time() - self.shoot
+        # print('get uiimage time:{}'.format(delta))
 
         if self._fileformat == 'PNG':
             self.data = ObjCInstance(c.UIImagePNGRepresentation(uiImg.ptr))
@@ -288,8 +279,8 @@ class camera():
 
         if self._saveAlbum:
             photos.create_image_asset(self._saveData2temp(fmt))
-            #delta = time.time() - self.shoot
-            #print('create image asset time:{}'.format(delta))
+            # delta = time.time() - self.shoot
+            # print('create image asset time:{}'.format(delta))
 
         if self._fileformat == 'PIL':
             self.data = self._temp2pil(self._saveData2temp())
@@ -332,7 +323,29 @@ class camera():
 
         return self._pil2ui(img)
 
+    def _rotateViewsAnimation(self):
+        motionData = motion.get_gravity()
+        # print(motionData)
+        if motionData[0] >= 0.5:
+
+            rad = math.pi/2*-1
+        elif motionData[0] <= -0.5:
+            rad = math.pi/2
+        else:
+            rad = 0
+
+        def animation():
+            self.zoomView.transform = ui.Transform.rotation(rad)
+            self.latestPhotoView.transform = ui.Transform.rotation(rad)
+        ui.animate(animation, duration=0.3)
+
     def captureOutput_didOutputSampleBuffer_fromConnection_(self, _self, _cmd, _output, _sample_buffer, *args):
+
+        if self._isiPad == False:
+            self._counter += 1
+            if self._counter == 45:
+                self._rotateViewsAnimation()
+                self._counter = 0
 
         if self._take_photo_flag == True:
             self._take_photo_flag = False
@@ -344,7 +357,7 @@ class camera():
                 ObjCInstance(imagebuffer))
             # バッファのロックを解放
             CVPixelBufferUnlockBaseAddress(imagebuffer, 0)
-            self.captureFlag = True
+            self._captureFlag = True
 
     def _init_mainview(self):
         self.mainView = ui.View()
@@ -354,22 +367,26 @@ class camera():
         self.mainView.name = 'Silent Camera'
 
         if 'iPad' in platform.machine():  # overwrite
-            self.mainView.height = ui.get_screen_size()[1]/1.3
-            self.mainView.width = ui.get_screen_size()[0]/1.5
+            self._isiPad = True
+            self.mainView.height = ui.get_screen_size()[0]
+            self.mainView.width = ui.get_screen_size()[0] / 1.78
+            if ui.get_screen_size()[0] > ui.get_screen_size()[1]:
+                self.mainView.height = ui.get_screen_size()[1]
+                self.mainView.width = ui.get_screen_size()[1] / 1.78
 
     def _init_whitenView(self):
         print('init whitenView')
         self.whitenView = ui.View()
         self.whitenView.height = self.mainView.height
         self.whitenView.width = self.mainView.width
-        self.whitenView.background_color = 'black'
+        self.whitenView.background_color = 'white'
         self.whitenView.alpha = 0.0
 
     def _init_shootbutton(self):
         print('init shootButton')
         self.shootButton = ui.Button()
         self.shootButton.flex = 'T'
-        self.shootButton.width = ui.get_screen_size()[0]*0.24
+        self.shootButton.width = 90
         self.shootButton.height = self.shootButton.width
         self.shootButton.center = (self.mainView.width*0.5,
                                    self.mainView.height*0.874)
@@ -385,7 +402,7 @@ class camera():
         self.latestPhotoView.height = 50
         self.latestPhotoView.width = self.latestPhotoView.height
         self.latestPhotoView.center = (
-            self.mainView.width*0.12, self.mainView.height*0.874)
+            self.mainView.width*0.14, self.mainView.height*0.872)
         self.latestPhotoView.image = self._get_latest_photo()
 
     def _init_savingPhotoView(self):
@@ -395,8 +412,7 @@ class camera():
         self.savingPhotoView.flex = 'T'
         self.savingPhotoView.height = 50
         self.savingPhotoView.width = self.savingPhotoView.height
-        self.savingPhotoView.center = (
-            self.mainView.width*0.12, self.mainView.height*0.874)
+        self.savingPhotoView.center = self.latestPhotoView.center
         self.savingPhotoView.image = ui.Image('iow:load_d_32')
         self.savingPhotoView.alpha = 0.0
 
@@ -406,8 +422,7 @@ class camera():
         self.openPhotoapp.flex = 'T'
         self.openPhotoapp.height = 50
         self.openPhotoapp.width = self.openPhotoapp.height
-        self.openPhotoapp.center = (self.mainView.width*0.12,
-                                    self.mainView.height*0.874)
+        self.openPhotoapp.center = self.latestPhotoView.center
         self.openPhotoapp.action = self._openPhotoapp
 
     def _init_closeButton(self):
@@ -435,16 +450,17 @@ class camera():
         self.zoomView = ui.View()
         self.zoomView.flex = 'T'
         self.zoomView.center = (self.mainView.width*0.88,
-                                self.mainView.height*0.882)
+                                self.mainView.height*0.898)
         self.zoomView.height = 72
         self.zoomView.width = 72
+        # self.zoomView.background_color='red'
 
     def _init_changeZoomButton(self):
         self.changeZoomButton = ui.Button()
         self.changeZoomButton.flex = 'WH'
         self.changeZoomButton.center = (self.zoomView.width*0,
-                                        self.zoomView.height * 0.1)
-        self.changeZoomButton.height = self.zoomView.height * 0.8
+                                        self.zoomView.height * 0)
+        self.changeZoomButton.height = self.zoomView.height * 0.76
         self.changeZoomButton.width = self.zoomView.width
         self.changeZoomButton.action = self._changeZoom_Button_tapped
         self.changeZoomButton.image = ui.Image('iow:ios7_camera_32')
@@ -456,8 +472,8 @@ class camera():
         self.zoomLevelLabel = ui.Label()
         self.zoomLevelLabel.flex = 'LT'
         self.zoomLevelLabel.width = self.zoomView.width
-        self.zoomLevelLabel.center = (self.zoomView.width*0.82,
-                                      self.zoomView.height * 0.9)
+        self.zoomLevelLabel.center = (self.zoomView.width*0.81,
+                                      self.zoomView.height * 0.64)
         self.zoomLevelLabel.text = 'x1.0'
         self.zoomLevelLabel.text_color = 'white'
         self.zoomView.add_subview(self.zoomLevelLabel)
@@ -483,7 +499,7 @@ if __name__ == '__main__':
 
 # usage example, if you import it
 
-    #cam = muon.camera(format = 'JPEG',save_to_album=False,return_Image=True,auto_close = True)
+    # cam = muon.camera(format = 'JPEG',save_to_album=False,return_Image=True,auto_close = True)
     # cam.launch()
-    #data = cam.getData()
+    # data = cam.getData()
     # print(data)
