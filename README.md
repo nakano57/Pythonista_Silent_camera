@@ -14,6 +14,10 @@ Clone the repository or download zip file and send it to your device
 - iPhone 11 Pro
 - iPhone XR
 
+## Environment
+
+- Pythonista 3.3
+
 ## Screenshot
 
 ![20191018-0107](https://user-images.githubusercontent.com/40960166/67027533-b055e480-f144-11e9-876b-2a210c15b40d.jpeg)
