@@ -4,9 +4,28 @@
 
 Clone the repository or download zip file and send it to your device
 
+<pre>
+camera(format='JPEG',
+       save_to_album=True, 
+       auto_close=False)
+</pre>
+
+- **format**
+
+  - supports JPEG,PNG,PIL,UIImage,CIImage
+  - If you choose PIL UIImage or CIImage, **save_to_album** becomes false
+
+- **save_to_album**
+
+  - save photo to album when it is `True`
+
+- **auto_close**
+  - close window automatically when photo has been saved successfully
+
 ## features
 
 - No sutter sound
+- Hi resorution photo
 - Support triple lens camera
 
 ## Tesed devices
@@ -20,9 +39,13 @@ Clone the repository or download zip file and send it to your device
 
 ## Screenshot
 
-![20191018-0107](https://user-images.githubusercontent.com/40960166/67027533-b055e480-f144-11e9-876b-2a210c15b40d.jpeg)
+![IMG_1004](https://user-images.githubusercontent.com/40960166/67027972-818c3e00-f145-11e9-9e7c-b822c5045b0d.png)
 
 ## ToDo
 
 - Tap to focus
 - iPad Support
+
+## Bug
+
+- incorrect resorutions

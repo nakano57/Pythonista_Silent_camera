@@ -55,7 +55,7 @@ dispatch_get_current_queue.restype = c_void_p
 
 
 class camera():
-    def __init__(self, format='JPEG', save_to_album=True, return_Image=False, auto_close=False):
+    def __init__(self, format='JPEG', save_to_album=True, auto_close=False):
         self.ciimage = None
         self._counter = 0
         self._take_photo_flag = False
@@ -494,7 +494,7 @@ class camera():
 
 if __name__ == '__main__':
     camera(format='JPEG', save_to_album=True,
-           return_Image=True, auto_close=False).launch()
+           auto_close=False).launch()
 
 
 # usage example, if you import it
