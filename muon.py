@@ -283,7 +283,7 @@ class camera():
             # print('create image asset time:{}'.format(delta))
 
         if self._fileformat == 'PIL':
-            self.data = self._temp2pil(self._saveData2temp())
+            self.data = self._temp2pil(self._saveData2temp('PIL'))
 
         self.latestPhotoView.image = self._get_latest_photo()
         self.savingPhotoView.alpha = 0.0
