@@ -7,7 +7,7 @@ Clone the repository or download zip file and send it to your device
 <pre>
 camera(format='JPEG',
        save_to_album=True, 
-       auto_close=False)
+       return_image=False)
 </pre>
 
 - **format**
@@ -19,11 +19,11 @@ camera(format='JPEG',
 
   - save photo to album when it is `True`
 
-- **auto_close**
-  - close window automatically when photo has been saved successfully
-
+- **return_image**
+  - You can get image using .getData() and automatically close when photo saves successfully 
 ## features
 
+- Tap to focus
 - No sutter sound
 - Hi resorution photo
 - Support triple lens camera
@@ -43,7 +43,6 @@ camera(format='JPEG',
 
 ## ToDo
 
-- Tap to focus
 - iPad Support
 
 ## Bug
