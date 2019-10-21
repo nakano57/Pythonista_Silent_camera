@@ -1,7 +1,10 @@
+# coding:utf-8
+#!python3
 from objc_util import *
 from ctypes import c_void_p
 from PIL import Image
 from PIL import ImageOps
+from queue import Queue
 import ui
 import io
 import os
@@ -55,17 +58,18 @@ dispatch_get_current_queue.restype = c_void_p
 
 
 class camera():
-    def __init__(self, format='JPEG', save_to_album=True, auto_close=False):
+    
+    def __init__(self, format='JPEG', save_to_album=True, return_Image=False):
+        self._que = Queue()
         self.ciimage = None
         self._counter = 0
-        self._take_photo_flag = False
-        self._captureFlag = False
+        self._captureFlag = 0
         self._isiPad = False
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
-        self.whiteWaiter = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        self.whiteWaiter = concurrent.futures.ThreadPoolExecutor(max_workers=2)
         self._saveAlbum = save_to_album
         self._fileformat = format
-        self._autoclose = auto_close
+        self._autoclose = return_Image
         cannotSaveAlbumFormarts = ['PIL', 'CIImage', 'UIImage']
         if format in cannotSaveAlbumFormarts:
             self._saveAlbum = False
@@ -216,9 +220,9 @@ class camera():
 
     def _button_tapped(self, sender):
         self.whitenView.alpha = 1.0
-        self._take_photo_flag = True
-        # self._take_photo()
-        self.executor.submit(self._take_photo)
+        self._captureFlag +=1
+        #self._take_photo(self._que.qsize())
+        self.executor.submit(self._take_photo,self._que.qsize())
 
     def _changeZoom_Button_tapped(self, sender):
         if self.oldZoomScale >= 2.0:
@@ -235,14 +239,9 @@ class camera():
 
         self.oldZoomScale = i
 
-    def _take_photo(self):
-        while True:
-            if self._captureFlag == True:
-                self._captureFlag = False
-                break
-
-        # self.shoot = time.time()
-
+    def _take_photo(self,size):
+        while size == self._que.qsize():
+            pass
         self.whiteWaiter.submit(self._whiteWaiter)
         self.savingPhotoView.alpha = 0.5
 
@@ -258,45 +257,50 @@ class camera():
             rot = 3
         # delta = time.time() - self.shoot
         # print('shooted time:{}'.format(delta))
+        ciimage = self._que.get()
 
         uiImg = UIImage.imageWithCIImage_scale_orientation_(
-            self.ciimage, 1.0, rot)
-        # delta = time.time() - self.shoot
-        # print('get uiimage time:{}'.format(delta))
+            ciimage, 1.0, rot)
 
         if self._fileformat == 'PNG':
-            self.data = ObjCInstance(c.UIImagePNGRepresentation(uiImg.ptr))
+            data = ObjCInstance(c.UIImagePNGRepresentation(uiImg.ptr))
             fmt = 'png'
         elif self._fileformat == 'CIImage':
-            self.data = uiImg.CIImage()
+            data = uiImg.CIImage()
         elif self._fileformat == 'UIImage':
-            self.data = uiImg
+            data = uiImg
         else:
             quality = 0.8
-            self.data = ObjCInstance(
+            data = ObjCInstance(
                 c.UIImageJPEGRepresentation(uiImg.ptr, quality))
             fmt = 'jpg'
 
         if self._saveAlbum:
-            photos.create_image_asset(self._saveData2temp(fmt))
-            # delta = time.time() - self.shoot
-            # print('create image asset time:{}'.format(delta))
+            temppath = self._saveData2temp(data,fmt)
+            photos.create_image_asset(temppath)
 
         if self._fileformat == 'PIL':
-            self.data = self._temp2pil(self._saveData2temp('PIL'))
-
-        self.latestPhotoView.image = self._get_latest_photo()
-        self.savingPhotoView.alpha = 0.0
-
+            temppath = self._saveData2temp(data,'pil')
+            data = self._temp2pil(temppath)
+            
+        self._que.task_done()
+        
         if self._autoclose:
+            self.data = data
             time.sleep(1)
             self.close()
+        
+        if self._que.all_tasks_done:
+            self.latestPhotoView.image = self._get_latest_photo_from_path(temppath)
+            self.savingPhotoView.alpha = 0.0
 
-    def _saveData2temp(self, fmt):
-        today = datetime.datetime.now().strftime("%Y%m%d-%H%M")
+        
+
+    def _saveData2temp(self, data,fmt):
+        today = datetime.datetime.now().strftime("%Y%m%d-%H%M-%f")
         temp_path = os.path.join(
             tempfile.gettempdir(), '{0}.{1}'.format(today, fmt))
-        self.data.writeToFile_atomically_(temp_path, True)
+        data.writeToFile_atomically_(temp_path, True)
 
         return temp_path
 
@@ -315,6 +319,17 @@ class camera():
         all_assets = photos.get_assets()
         last_asset = all_assets[-1]
         img = last_asset.get_image()
+
+        if img.width >= img.height:
+            img = img.resize((100, round(img.height/img.width*100)))
+        else:
+            img = img.resize((round(img.width/img.height*100), 100))
+
+        return self._pil2ui(img)
+    
+    def _get_latest_photo_from_path(self,path):
+
+        img = Image.open(path)
 
         if img.width >= img.height:
             img = img.resize((100, round(img.height/img.width*100)))
@@ -347,17 +362,21 @@ class camera():
                 self._rotateViewsAnimation()
                 self._counter = 0
 
-        if self._take_photo_flag == True:
-            self._take_photo_flag = False
+        if self._captureFlag != 0:
+            self._captureFlag-=1
             imagebuffer = CMSampleBufferGetImageBuffer(_sample_buffer)
 
             # バッファをロック
             CVPixelBufferLockBaseAddress(imagebuffer, 0)
-            self.ciimage = CIImage.imageWithCVPixelBuffer_(
-                ObjCInstance(imagebuffer))
+            #self.ciimage = CIImage.imageWithCVPixelBuffer_(
+                #ObjCInstance(imagebuffer))
+            self._que.put(CIImage.imageWithCVPixelBuffer_(ObjCInstance(imagebuffer)))
             # バッファのロックを解放
             CVPixelBufferUnlockBaseAddress(imagebuffer, 0)
-            self._captureFlag = True
+            #self._captureFlag = False
+            
+    
+        
 
     def _init_mainview(self):
         self.mainView = ui.View()
@@ -494,7 +513,7 @@ class camera():
 
 if __name__ == '__main__':
     camera(format='JPEG', save_to_album=True,
-           auto_close=False).launch()
+           return_Image=False).launch()
 
 
 # usage example, if you import it
